@@ -11,16 +11,9 @@ using Microsoft.EntityFrameworkCore;
 using System.Runtime.Intrinsics.X86;
 using Npgsql;
 
-public class User
-{
-    public int id { get; set; }
-    public string username { get; set; }
-    public string message { get; set; }
-}
 
 public class ApplicationContext : DbContext
 {
-    public DbSet<User> info { get; set; } = null!;
     public ApplicationContext()
     {
         Database.EnsureCreated();
@@ -29,15 +22,39 @@ public class ApplicationContext : DbContext
     {
         optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=testDB;Username=postgres;Password=nikitos");
     }
+    public void CreateDynamicTabl(string tableName)
+    {
+        var createTableQuery = $@"
+            CREATE TABLE IF NOT EXISTS ""{tableName}"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""MessageText"" TEXT NOT NULL,
+                ""SentAt"" TIMESTAMP NOT NULL
+            )";
+
+        Database.ExecuteSqlRaw(createTableQuery);
+    }
+
+    public void AddUserMessage(string tableName, string messageText)
+    {
+        var addMessageQuery = $@"
+            INSERT INTO ""{tableName}"" (""MessageText"", ""SentAt"")
+            VALUES (@p0, @p1)";
+
+        Database.ExecuteSqlRaw(addMessageQuery, messageText, DateTime.UtcNow);
+    }
 }
 
-class Program
+class Program   
 {
     static ITelegramBotClient botClient;
 
     static void Main()
     {
+
         botClient = new TelegramBotClient("7242370794:AAFrI45C08puMjeYkthCHKVPSr1mWg0i4uE");
+
+        ApplicationContext db = new ApplicationContext();
+        db.SaveChangesAsync();
 
         var me = botClient.GetMeAsync().Result;
         Console.WriteLine("Запущен бот " + botClient.GetMeAsync().Result.FirstName);
@@ -52,29 +69,31 @@ class Program
             receiverOptions
         );
         Console.ReadKey();
+        
+        
 
-   
     }
     static async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
+        string connnect = "Host=localhost;Port=5432;Database=testDB;Username=postgres;Password=nikitos";
         var message = update.Message;
         Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(update));
-        using var cmd = new NpgsqlCommand();
 
 
         if (update.Type == UpdateType.Message)
         {
             if (update.Message.Type == MessageType.Text)
             {
-                int IDD = Convert.ToInt32(message.From.Id);
+
                 string text = message.Text;
                 string username = message.From.Username;
+                long userId = message.From.Id;
+                string tableName = $"{username}_{userId}";
+
                 using (ApplicationContext db = new ApplicationContext())
                 {
-                    cmd.CommandText = ("CREATE TABLE" + username);
-                    User user = new User {id = IDD, message = text, username = username };
-                    db.info.Add(user);
-                    db.SaveChanges();
+                    db.CreateDynamicTabl(tableName);
+                    db.AddUserMessage(tableName, text);
                 }
 
 
@@ -85,6 +104,8 @@ class Program
             }
             if (update.Message.Type == MessageType.Sticker)
             {
+     
+
                 await botClient.SendTextMessageAsync(
                     chatId: message.Chat.Id,
                     text: "You sent a sticker!",
