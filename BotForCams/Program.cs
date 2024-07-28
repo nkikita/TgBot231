@@ -28,7 +28,8 @@ public class ApplicationContext : DbContext
             CREATE TABLE IF NOT EXISTS ""{tableName}"" (
                 ""Id"" SERIAL PRIMARY KEY,
                 ""MessageText"" TEXT NOT NULL,
-                ""SentAt"" TIMESTAMP NOT NULL
+                ""SentAt"" TIMESTAMP NOT NULL,
+                ""Photo"" 
             )";
 
         Database.ExecuteSqlRaw(createTableQuery);
@@ -41,6 +42,11 @@ public class ApplicationContext : DbContext
             VALUES (@p0, @p1)";
 
         Database.ExecuteSqlRaw(addMessageQuery, messageText, DateTime.UtcNow);
+    }
+
+    public void AddUserPhoto(string tableName)
+    {
+
     }
 }
 
@@ -104,8 +110,6 @@ class Program
             }
             if (update.Message.Type == MessageType.Sticker)
             {
-     
-
                 await botClient.SendTextMessageAsync(
                     chatId: message.Chat.Id,
                     text: "You sent a sticker!",
@@ -119,6 +123,14 @@ class Program
                     text: "You sent a voise message!",
                     cancellationToken: cancellationToken
                 );
+            }
+            if(update.Message.Type == MessageType.Photo)
+            {
+                await botClient.SendTextMessageAsync(
+                   chatId: message.Chat.Id,
+                   text: "You sent a image!",
+                   cancellationToken: cancellationToken
+               );
             }
         }
     }
