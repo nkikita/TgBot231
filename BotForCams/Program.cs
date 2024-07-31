@@ -11,9 +11,18 @@ using Microsoft.EntityFrameworkCore;
 using System.Runtime.Intrinsics.X86;
 using Npgsql;
 
+public class Info
+{
+    public string name { get; set; }
+    public int id { get; set; }
+    public bool stastus { get; set; }
+
+    public DateTime datetame {  get; set; }
+}
 
 public class ApplicationContext : DbContext
 {
+    public DbSet<Info> Info { get; set; } = null!;
     public ApplicationContext()
     {
         Database.EnsureCreated();
@@ -28,11 +37,21 @@ public class ApplicationContext : DbContext
             CREATE TABLE IF NOT EXISTS ""{tableName}"" (
                 ""Id"" SERIAL PRIMARY KEY,
                 ""MessageText"" TEXT NOT NULL,
-                ""SentAt"" TIMESTAMP NOT NULL,
-                ""Photo"" 
+                ""SentAt"" TIMESTAMP NOT NULL
             )";
 
         Database.ExecuteSqlRaw(createTableQuery);
+    }
+
+    public void InfoTable(string name, int id, bool stastus, DateTime datetame)
+    {
+        var createTable = $@"
+            INSERT INTO info (""id"", ""name"", ""stastus"", ""datetame"")
+            VALUES (@p0, @p1, @p2, @p3)
+            ON CONFLICT (""id"") 
+            DO UPDATE SET ""stastus"" = true;";
+
+        Database.ExecuteSqlRaw(createTable, id, name, stastus, datetame);
     }
 
     public void AddUserMessage(string tableName, string messageText)
@@ -43,14 +62,9 @@ public class ApplicationContext : DbContext
 
         Database.ExecuteSqlRaw(addMessageQuery, messageText, DateTime.UtcNow);
     }
-
-    public void AddUserPhoto(string tableName)
-    {
-
-    }
 }
 
-class Program   
+class Program
 {
     static ITelegramBotClient botClient;
 
@@ -67,16 +81,16 @@ class Program
 
         var receiverOptions = new ReceiverOptions
         {
-            AllowedUpdates = { } 
+            AllowedUpdates = { }
         };
         botClient.StartReceiving(
-            HandleUpdateAsync,      
+            HandleUpdateAsync,
             HandleErrorAsync,
             receiverOptions
         );
         Console.ReadKey();
-        
-        
+
+
 
     }
     static async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
@@ -93,23 +107,38 @@ class Program
 
                 string text = message.Text;
                 string username = message.From.Username;
-                long userId = message.From.Id;
+                int userId = Convert.ToInt32(message.From.Id);
                 string tableName = $"{username}_{userId}";
+                DateTime dateTime = DateTime.Now;
+                DateTime utcNow = dateTime.ToUniversalTime();
+                ApplicationContext db = new ApplicationContext();
 
-                using (ApplicationContext db = new ApplicationContext())
+
+                db.CreateDynamicTabl(tableName);
+                db.AddUserMessage(tableName, text);
+
+                if (text == "/pay")
                 {
-                    db.CreateDynamicTabl(tableName);
-                    db.AddUserMessage(tableName, text);
+                    db.InfoTable(username, userId, false, utcNow);
+                    await botClient.SendTextMessageAsync(
+                       chatId: message.Chat.Id,
+                       text: "wait",
+                       cancellationToken: cancellationToken);
                 }
 
+                else
+                {
+                    await botClient.SendTextMessageAsync(
+                        chatId: message.Chat.Id,
+                        text: "You sent a text!("+text+")",
+                        cancellationToken: cancellationToken);
 
-                await botClient.SendTextMessageAsync(
-                    chatId: message.Chat.Id,
-                    text: "You sent a text!("+text+")",
-                    cancellationToken: cancellationToken);
+                }
             }
             if (update.Message.Type == MessageType.Sticker)
             {
+
+
                 await botClient.SendTextMessageAsync(
                     chatId: message.Chat.Id,
                     text: "You sent a sticker!",
@@ -123,14 +152,6 @@ class Program
                     text: "You sent a voise message!",
                     cancellationToken: cancellationToken
                 );
-            }
-            if(update.Message.Type == MessageType.Photo)
-            {
-                await botClient.SendTextMessageAsync(
-                   chatId: message.Chat.Id,
-                   text: "You sent a image!",
-                   cancellationToken: cancellationToken
-               );
             }
         }
     }
