@@ -12,6 +12,12 @@ using System.Runtime.Intrinsics.X86;
 using Npgsql;
 using System.Threading;
 using static System.Net.Mime.MediaTypeNames;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using Telegram.Bot.Types.ReplyMarkups;
+using System.Security.Cryptography.X509Certificates;
+using System.Numerics;
+using System.Collections.Generic;
+using System.Xml.Linq;
 
 public class Info
 {
@@ -64,6 +70,16 @@ public class ApplicationContext : DbContext
 
         Database.ExecuteSqlRaw(addMessageQuery, messageText, DateTime.UtcNow);
     }
+    public void MakingAPayment(long userId)
+    {
+        var updateStatusQuery = @"
+            UPDATE info
+            SET ""stastus"" = @p0
+            WHERE ""id"" = @p1";
+
+        Database.ExecuteSqlRaw(updateStatusQuery, true, userId);
+    }
+
     public List<long> GetAllUserIds()
     {
         var userIds = new List<long>();
@@ -145,7 +161,6 @@ class Program
                 }
             }
         }
-
     }
 
 
@@ -154,13 +169,13 @@ class Program
         //string connnect = "Host=localhost;Port=5432;Database=testDB;Username=postgres;Password=nikitos";
         var message = update.Message;
         Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(update));
-
+        
+        List<string> Listcommsands= new List<string> {"/donate", "/help" };
 
         if (update.Type == UpdateType.Message)
         {
             if (update.Message.Type == MessageType.Text)
             {
-
                 string text = message.Text;
                 string username = message.From.Username;
                 int userId = Convert.ToInt32(message.From.Id);
@@ -168,17 +183,49 @@ class Program
                 DateTime dateTime = DateTime.Now;
                 DateTime utcNow = dateTime.ToUniversalTime();
                 ApplicationContext db = new ApplicationContext();
+                string commsands = System.String.Join(", ", Listcommsands);
+
+                InlineKeyboardMarkup inlineKeyboard = new InlineKeyboardMarkup(new[]
+                {
+                new []
+                        {
+                            InlineKeyboardButton.WithCallbackData("да", "yes"),
+                            InlineKeyboardButton.WithCallbackData("нет", "no")
+                        }
+                });
+
 
                 db.CreateDynamicTabl(tableName);
                 db.AddUserMessage(tableName, text);
                 db.InfoTable(username, userId, false, utcNow);
 
-                if (text == "/pay")
+                if (text == "/start")
                 {
-                    
                     await botClient.SendTextMessageAsync(
                        chatId: message.Chat.Id,
-                       text: "https://www.youtube.com/?app=desktop&hl=ru",
+                       text: "Привтствую тебя дорогой пользователь! Вот список доступных комаанд: " + commsands,
+                       cancellationToken: cancellationToken);
+
+                }
+
+                else if (text == "/help")
+                {
+                    await botClient.SendTextMessageAsync(
+                       chatId: message.Chat.Id,
+                       text: "Список досступных комаанд: " + commsands,
+                       cancellationToken: cancellationToken);
+                    
+
+                }
+
+                else if (text == "/donate")
+                {
+                    await botClient.SendTextMessageAsync(
+                       chatId: message.Chat.Id,
+                       text: "Ваши донаты помогают нам улучшать и развивать нашего Telegram-бота. " +
+                       "Все средства пойдут на разработку новых функций и улучшение существующих. " +
+                       "Вы готовы поддержать разработчика?",
+                       replyMarkup: inlineKeyboard,
                        cancellationToken: cancellationToken);
                 }
 
@@ -188,13 +235,10 @@ class Program
                         chatId: message.Chat.Id,
                         text: "You sent a text!("+text+")",
                         cancellationToken: cancellationToken);
-
                 }
             }
             if (update.Message.Type == MessageType.Sticker)
             {
-
-
                 await botClient.SendTextMessageAsync(
                     chatId: message.Chat.Id,
                     text: "You sent a sticker!",
@@ -210,6 +254,10 @@ class Program
                 );
             }
         }
+        else if (update.Type == UpdateType.CallbackQuery)
+        {
+            await HandleCallbackQuery(update.CallbackQuery, cancellationToken);
+        }
     }
     static Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
     {
@@ -221,5 +269,53 @@ class Program
 
         Console.WriteLine(errorMessage);
         return Task.CompletedTask;
+    }
+
+
+    static async Task HandleCallbackQuery(CallbackQuery callbackQuery, CancellationToken cancellationToken)
+    {
+        
+        ApplicationContext db = new ApplicationContext();
+
+        string responseText = callbackQuery.Data
+            switch
+        {
+            "yes" => "(donate link)",
+            "no" => "хорошо, если передумаете, возвращайтесь ;)",
+            _ => "Unknown callback"
+        };
+        if(callbackQuery.Data == "yes")
+        {
+            db.MakingAPayment(callbackQuery.From.Id);
+        }
+
+
+        await botClient.AnswerCallbackQueryAsync(
+            callbackQueryId: callbackQuery.Id,
+            text: "Button pressed",
+            cancellationToken: cancellationToken
+        );
+
+
+        await botClient.SendTextMessageAsync(
+        chatId: callbackQuery.Message.Chat.Id,
+        text: responseText,
+        cancellationToken: cancellationToken);
+
+    }
+
+    static async Task DeleteMessageAfterDelay(ITelegramBotClient botClient, long chatId, int messageId, CancellationToken cancellationToken)
+    {
+        // Задержка в 10 секунд (можете изменить на нужное значение)
+        await Task.Delay(5000);
+
+        try
+        {
+            await botClient.DeleteMessageAsync(chatId, messageId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Не удалось удалить сообщение: {ex.Message}");
+        }
     }
 }
